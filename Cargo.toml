@@ -9,3 +9,6 @@ edition = "2018"
 [dependencies]
 nix = "0.16.1"
 libc = "0.2.66"
+notify = "4.0.15"
+structopt = "0.3.7"
+ignore = "0.4"
