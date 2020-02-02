@@ -9,8 +9,10 @@ use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::fs;
 use std::io;
 use std::sync::mpsc::channel;
+use std::sync::mpsc;
 use std::thread;
 use std::time;
+use std::time::Duration;
 
 mod pbar;
 
@@ -53,8 +55,10 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
         watcher.watch(parent, RecursiveMode::Recursive)?;
     }
+
+    let mut dirs_set = std::collections::HashSet::new();
     loop {
-        match rx.recv() {
+        match rx.recv_timeout(Duration::from_millis(1000)) {
             Ok(event) => {
                 let path = get_path(&event);
                 if path.is_none() {
@@ -64,23 +68,29 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 let edited = path.unwrap();
 
                 for dir in dirs_to_sync.iter() {
-                    let mut ib = gitignore::GitignoreBuilder::new(dir.canonicalize().unwrap());
+                    let mut ib = gitignore::GitignoreBuilder::new(dir);
                     ib.add(dir.join(".gitignore"));
 
                     let ignore = ib.build().unwrap();
 
                     let m = ignore.matched_path_or_any_parents(&edited, false);
                     if m.is_ignore() {
-                        println!("ignore edited file {:?}", edited);
                         continue;
                     }
 
                     if edited.starts_with(dir.canonicalize().unwrap()) {
-                        println!("rsync {:?} due to {:?}", dir, event);
+                        dirs_set.insert(dir);
                     }
                 }
             }
-            Err(e) => println!("watch error: {:?}", e),
+            Err(e) => if e == std::sync::mpsc::RecvTimeoutError::Timeout {
+                if !dirs_set.is_empty() {
+                    println!("rsync: {:?}", dirs_set);
+                    dirs_set.clear();
+                }
+            } else {
+                println!("watch error: {:?}", e)
+            },
         }
     }
 
