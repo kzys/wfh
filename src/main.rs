@@ -2,6 +2,9 @@ extern crate ignore;
 extern crate notify;
 
 #[macro_use]
+extern crate log;
+
+#[macro_use]
 extern crate structopt;
 
 mod app;
@@ -18,15 +21,14 @@ struct Options {
 }
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+    
     let options = Options::from_args();
     println!("{:#?}", options);
 
     let (_, col) = pbar::window_size();
     println!("col = {}", col);
 
-    let app = app::App {
-        host: options.host,
-        dirs: options.dirs,
-    };
+    let app = app::App::new(options.host, options.dirs)?;
     app.run()
 }

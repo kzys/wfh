@@ -53,25 +53,26 @@ impl App {
                 }
 
                 let mut ib = GitignoreBuilder::new(dir.clone());
-                ib.add(ignore_path);
-
+                ib.add(ignore_path.clone());
                 let ignore = ib.build().unwrap();
+
                 let m = ignore.matched_path_or_any_parents(&edited, false);
-                !m.is_ignore()
+                if m.is_ignore() {
+                    debug!("ignore {:?} due to {:?}", edited, ignore_path);
+                    false
+                } else {
+                    true
+                }
             })
         })
     }
 
     pub fn run(&self) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let mut dirs_to_sync: Vec<std::path::PathBuf> = vec![];
-
         let (tx, rx) = channel();
         let mut watcher = watcher(tx, time::Duration::from_secs(1)).expect("error");
 
         for parent in &self.dirs {
-            for dir in fs::read_dir(&parent)? {
-                dirs_to_sync.push(dir?.path())
-            }
+            debug!("watch {:?}", parent);
             watcher.watch(parent, RecursiveMode::Recursive)?;
         }
 
