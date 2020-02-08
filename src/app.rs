@@ -49,6 +49,7 @@ impl App {
                 // TODO: handle multiple .gitignore files
                 let ignore_path = dir.join(".gitignore");
                 if !ignore_path.exists() {
+                    debug!("sync {:?}", edited);
                     return true;
                 }
 
@@ -61,6 +62,7 @@ impl App {
                     debug!("ignore {:?} due to {:?}", edited, ignore_path);
                     false
                 } else {
+                    debug!("sync {:?}", edited);
                     true
                 }
             })
