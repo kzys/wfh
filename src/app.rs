@@ -1,6 +1,7 @@
 use ignore::gitignore;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::fs;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::time;
@@ -58,7 +59,7 @@ impl App {
             watcher.watch(parent, RecursiveMode::Recursive)?;
         }
 
-        let mut dirs_set = std::collections::HashSet::new();
+        let mut dirs_set = HashSet::new();
         loop {
             match rx.recv_timeout(Duration::from_millis(1000)) {
                 Ok(event) => {
@@ -67,7 +68,7 @@ impl App {
                 Err(e) => {
                     if e == std::sync::mpsc::RecvTimeoutError::Timeout {
                         if !dirs_set.is_empty() {
-                            println!("rsync: {:?}", dirs_set);
+                            self.sync_dirs(&dirs_set);
                             dirs_set.clear();
                         }
                     } else {
@@ -77,5 +78,9 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn sync_dirs(&self, dirs: &HashSet<PathBuf>) {
+        println!("rsync: {:?}", dirs);
     }
 }
