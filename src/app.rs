@@ -1,7 +1,7 @@
 use ignore::gitignore;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::time;
 use std::time::Duration;
@@ -11,7 +11,7 @@ pub struct App {
     pub dirs: Vec<String>,
 }
 
-fn get_path(event: &DebouncedEvent) -> Option<&std::path::Path> {
+fn find_path(event: &DebouncedEvent) -> Option<&Path> {
     match event {
         DebouncedEvent::Create(path)
         | DebouncedEvent::Remove(path)
@@ -23,32 +23,26 @@ fn get_path(event: &DebouncedEvent) -> Option<&std::path::Path> {
 
 impl App {
     fn find_dir_to_sync(&self, event: &DebouncedEvent) -> Option<PathBuf> {
-        let path = get_path(&event);
-        if path.is_none() {
-            return None;
-        }
+        find_path(&event).and_then(|edited|{
+            for dir in self.dirs.iter() {
+                let dir = std::path::PathBuf::from(dir);
 
-        let edited = path.unwrap();
+                let mut ib = gitignore::GitignoreBuilder::new(dir.clone());
+                ib.add(dir.join(".gitignore"));
 
-        for dir in self.dirs.iter() {
-            let dir = std::path::PathBuf::from(dir);
+                let ignore = ib.build().unwrap();
 
-            let mut ib = gitignore::GitignoreBuilder::new(dir.clone());
-            ib.add(dir.join(".gitignore"));
+                let m = ignore.matched_path_or_any_parents(&edited, false);
+                if m.is_ignore() {
+                    continue;
+                }
 
-            let ignore = ib.build().unwrap();
-
-            let m = ignore.matched_path_or_any_parents(&edited, false);
-            if m.is_ignore() {
-                continue;
+                if edited.starts_with(dir.canonicalize().unwrap()) {
+                    return Some(dir);
+                }
             }
-
-            if edited.starts_with(dir.canonicalize().unwrap()) {
-                return Some(dir);
-            }
-        }
-
-        None
+            None
+        })
     }
 
     pub fn run(&self) -> std::result::Result<(), Box<dyn std::error::Error>> {
