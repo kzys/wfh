@@ -24,10 +24,10 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     
     let options = Options::from_args();
-    println!("{:#?}", options);
+    debug!("{:#?}", options);
 
     let (_, col) = pbar::window_size();
-    println!("col = {}", col);
+    debug!("col = {}", col);
 
     let app = app::App::new(options.host, options.dirs)?;
     app.run()

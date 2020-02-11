@@ -91,7 +91,7 @@ impl App {
                             dirs_set.clear();
                         }
                     } else {
-                        println!("watch error: {:?}", e)
+                        error!("watch error: {:?}", e)
                     }
                 }
             }
@@ -100,6 +100,6 @@ impl App {
     }
 
     fn sync_dirs(&self, dirs: &HashSet<PathBuf>) {
-        println!("rsync: {:?} {:?}", self.host, dirs);
+        info!("rsync: {:?} {:?}", self.host, dirs);
     }
 }
