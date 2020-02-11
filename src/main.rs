@@ -22,7 +22,7 @@ struct Options {
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-    
+
     let options = Options::from_args();
     debug!("{:#?}", options);
 

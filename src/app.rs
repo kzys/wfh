@@ -2,7 +2,9 @@ use ignore::gitignore::GitignoreBuilder;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::fs;
+use std::io::{BufRead, BufReader, Error, ErrorKind};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::channel;
 use std::time;
 use std::time::Duration;
@@ -59,7 +61,7 @@ impl App {
 
                 let m = ignore.matched_path_or_any_parents(&edited, false);
                 if m.is_ignore() {
-                    debug!("ignore {:?} due to {:?}", edited, ignore_path);
+                    trace!("ignore {:?} due to {:?}", edited, ignore_path);
                     false
                 } else {
                     debug!("sync {:?}", edited);
@@ -100,6 +102,36 @@ impl App {
     }
 
     fn sync_dirs(&self, dirs: &HashSet<PathBuf>) {
-        info!("rsync: {:?} {:?}", self.host, dirs);
+        for dir in dirs {
+            self.sync_dir(dir)
+        }
+    }
+
+    fn sync_dir(&self, dir: &PathBuf) {
+        let src = format!("{}/", dir.to_string_lossy());
+        let dest = format!("{}:{}/", self.host, dir.to_string_lossy());
+
+        let mut args = vec!["--archive", "--verbose"];
+        args.push(&src);
+        args.push(&dest);
+
+        self.run_command("rsync", args)
+    }
+
+    fn run_command(&self, command: &str, args: Vec<&str>) {
+        info!("{} {:?}", command, args.clone());
+
+        let child = Command::new(command)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("failed to execute process");
+
+        let stdout = BufReader::new(child.stdout.unwrap());
+        stdout.lines().for_each(|line| debug!("out: {:?}", line)); //
+
+        let stderr = BufReader::new(child.stderr.unwrap());
+        stderr.lines().for_each(|line| debug!("err: {:?}", line)); //
     }
 }
