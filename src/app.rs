@@ -108,30 +108,36 @@ impl App {
     }
 
     fn sync_dir(&self, dir: &PathBuf) {
+        self.run_command(
+            "ssh",
+            vec![&self.host, "mkdir", "-p", &dir.to_string_lossy()],
+        );
+
         let src = format!("{}/", dir.to_string_lossy());
         let dest = format!("{}:{}/", self.host, dir.to_string_lossy());
-
-        let mut args = vec!["--archive", "--verbose"];
-        args.push(&src);
-        args.push(&dest);
-
-        self.run_command("rsync", args)
+        self.run_command("rsync", vec!["--archive", "--verbose", &src, &dest]);
     }
 
     fn run_command(&self, command: &str, args: Vec<&str>) {
         info!("{} {:?}", command, args.clone());
 
-        let child = Command::new(command)
+        let mut child = Command::new(command)
             .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .expect("failed to execute process");
 
-        let stdout = BufReader::new(child.stdout.unwrap());
-        stdout.lines().for_each(|line| debug!("out: {:?}", line)); //
+        if let Some(stdout) = child.stdout.take() {
+            let reader = BufReader::new(stdout);
+            reader.lines().for_each(|line| debug!("out: {:?}", line));
+        }
 
-        let stderr = BufReader::new(child.stderr.unwrap());
-        stderr.lines().for_each(|line| debug!("err: {:?}", line)); //
+        if let Some(stderr) = child.stderr.take() {
+            let reader = BufReader::new(stderr);
+            reader.lines().for_each(|line| debug!("err: {:?}", line));
+        }
+
+        debug!("exit: {:?}", child.wait());
     }
 }
