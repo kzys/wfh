@@ -1,8 +1,9 @@
 use ignore::gitignore::GitignoreBuilder;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::collections::HashSet;
+use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader, Error, ErrorKind};
+use std::io::{self, BufRead, BufReader, Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::channel;
@@ -12,6 +13,8 @@ use std::time::Duration;
 pub struct App {
     host: String,
     dirs: Vec<PathBuf>,
+    remote_home: String,
+    local_home: String,
 }
 
 fn find_path(event: &DebouncedEvent) -> Option<&Path> {
@@ -24,6 +27,17 @@ fn find_path(event: &DebouncedEvent) -> Option<&Path> {
     }
 }
 
+fn capture_stdin(command: &str, args: Vec<&str>) -> Result<String, std::string::FromUtf8Error> {
+    info!("{} {:?}", command, args.clone());
+
+    let out = Command::new(command)
+        .args(args)
+        .output()
+        .expect("failed to execute process");
+
+    String::from_utf8(out.stdout)
+}
+
 impl App {
     pub fn new(host: String, dirs: Vec<String>) -> Result<App, Box<dyn std::error::Error>> {
         let mut dirs_to_sync: Vec<std::path::PathBuf> = vec![];
@@ -34,11 +48,17 @@ impl App {
             }
         }
 
+        let remote_home = capture_stdin("ssh", vec![&host, "echo", "-n", "$HOME"])?;
+        let local_home = env::var("HOME")?;
+
         Ok(App {
             host,
             dirs: dirs_to_sync,
+            remote_home,
+            local_home,
         })
     }
+
     fn find_dir_to_sync(&self, event: &DebouncedEvent) -> Option<PathBuf> {
         find_path(&event).and_then(|edited| {
             let dir_to_sync = self
@@ -72,6 +92,12 @@ impl App {
     }
 
     pub fn run(&self) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let mut dirs_set = HashSet::new();
+        for dir in &self.dirs {
+            dirs_set.insert(dir.to_owned());
+        }
+        self.sync_dirs(&dirs_set);
+
         let (tx, rx) = channel();
         let mut watcher = watcher(tx, time::Duration::from_secs(1)).expect("error");
 
@@ -84,7 +110,8 @@ impl App {
         loop {
             match rx.recv_timeout(Duration::from_millis(1000)) {
                 Ok(event) => {
-                    self.find_dir_to_sync(&event).map(|x| dirs_set.insert(x));
+                    self.find_dir_to_sync(&event)
+                        .map(|x| dirs_set.insert(x.clone()));
                 }
                 Err(e) => {
                     if e == std::sync::mpsc::RecvTimeoutError::Timeout {
@@ -108,17 +135,26 @@ impl App {
     }
 
     fn sync_dir(&self, dir: &PathBuf) {
-        self.run_command(
-            "ssh",
-            vec![&self.host, "mkdir", "-p", &dir.to_string_lossy()],
-        );
+        let remote_dir = self.remote_dir(dir);
+
+        self.run_command("ssh", vec![&self.host, "mkdir", "-p", &remote_dir]);
 
         let src = format!("{}/", dir.to_string_lossy());
-        let dest = format!("{}:{}/", self.host, dir.to_string_lossy());
+        let dest = format!("{}:{}/", self.host, remote_dir);
         self.run_command("rsync", vec!["--archive", "--verbose", &src, &dest]);
     }
 
-    fn run_command(&self, command: &str, args: Vec<&str>) {
+    fn remote_dir(&self, path: &PathBuf) -> String {
+        let mut s = path.to_string_lossy().into_owned();
+        if let Some(begin) = s.find(&self.local_home) {
+            if begin == 0 {
+                s.replace_range(..self.local_home.len(), &self.remote_home)
+            }
+        }
+        s
+    }
+
+    fn run_command(&self, command: &str, args: Vec<&str>) -> bool {
         info!("{} {:?}", command, args.clone());
 
         let mut child = Command::new(command)
@@ -138,6 +174,10 @@ impl App {
             reader.lines().for_each(|line| debug!("err: {:?}", line));
         }
 
-        debug!("exit: {:?}", child.wait());
+        if let Ok(exit) = child.wait() {
+            exit.success()
+        } else {
+            false
+        }
     }
 }
