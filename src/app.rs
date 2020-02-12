@@ -1,9 +1,11 @@
+extern crate tempfile;
+
 use ignore::gitignore::GitignoreBuilder;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::env;
-use std::fs;
-use std::io::{self, BufRead, BufReader, Error, ErrorKind};
+use std::fs::{self, File};
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::channel;
@@ -137,11 +139,36 @@ impl App {
     fn sync_dir(&self, dir: &PathBuf) {
         let remote_dir = self.remote_dir(dir);
 
+        let mut exclude_file = tempfile::NamedTempFile::new().unwrap();
+
+        let output = Command::new("git")
+            .args(vec![
+                "-C",
+                &dir.to_string_lossy(),
+                "ls-files",
+                "--exclude-standard",
+                "-oi",
+                "--directory",
+            ])
+            .output()
+            .expect("failed to execute process");
+        exclude_file.write_all(&output.stdout);
+
         self.run_command("ssh", vec![&self.host, "mkdir", "-p", &remote_dir]);
 
         let src = format!("{}/", dir.to_string_lossy());
         let dest = format!("{}:{}/", self.host, remote_dir);
-        self.run_command("rsync", vec!["--archive", "--verbose", &src, &dest]);
+        self.run_command(
+            "rsync",
+            vec![
+                "--archive",
+                "--exclude-from",
+                &exclude_file.path().to_string_lossy(),
+                "--verbose",
+                &src,
+                &dest,
+            ],
+        );
     }
 
     fn remote_dir(&self, path: &PathBuf) -> String {
@@ -166,12 +193,12 @@ impl App {
 
         if let Some(stdout) = child.stdout.take() {
             let reader = BufReader::new(stdout);
-            reader.lines().for_each(|line| debug!("out: {:?}", line));
+            reader.lines().for_each(|line| trace!("out: {:?}", line));
         }
 
         if let Some(stderr) = child.stderr.take() {
             let reader = BufReader::new(stderr);
-            reader.lines().for_each(|line| debug!("err: {:?}", line));
+            reader.lines().for_each(|line| trace!("err: {:?}", line));
         }
 
         if let Ok(exit) = child.wait() {
