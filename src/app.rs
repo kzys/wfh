@@ -139,34 +139,53 @@ impl App {
     fn sync_dir(&self, dir: &PathBuf) {
         let remote_dir = self.remote_dir(dir);
 
-        let mut exclude_file = tempfile::NamedTempFile::new().unwrap();
+        let mut git_dir = dir.clone();
+        git_dir.push(".git");
 
-        let output = Command::new("git")
-            .args(vec![
-                "-C",
-                &dir.to_string_lossy(),
-                "ls-files",
-                "--exclude-standard",
-                "-oi",
-                "--directory",
-            ])
-            .output()
-            .expect("failed to execute process");
-        exclude_file.write_all(&output.stdout);
+        let mut rsync_args = vec!["--archive", "--verbose"];
+
+        let exclude_file = if git_dir.is_dir() {
+            let mut file = tempfile::NamedTempFile::new().unwrap();
+            let output = Command::new("git")
+                .args(vec![
+                    "-C",
+                    &dir.to_string_lossy(),
+                    "ls-files",
+                    "--exclude-standard",
+                    "-oi",
+                    "--directory",
+                ])
+                .output()
+                .expect("failed to execute process");
+            file.write_all(&output.stdout);
+            Some(file)
+        } else {
+            None
+        };
 
         self.run_command("ssh", vec![&self.host, "mkdir", "-p", &remote_dir]);
 
+        let path = exclude_file.map(|file| file.path().to_string_lossy().to_string());
+        path.as_ref().map(|p| {
+            rsync_args.push("--exclude-from");
+            rsync_args.push(p);
+        });
+
         let src = format!("{}/", dir.to_string_lossy());
         let dest = format!("{}:{}/", self.host, remote_dir);
+
+        rsync_args.push(&src);
+        rsync_args.push(&dest);
+
+        self.run_command("rsync", rsync_args);
         self.run_command(
             "rsync",
             vec![
                 "--archive",
-                "--exclude-from",
-                &exclude_file.path().to_string_lossy(),
                 "--verbose",
-                &src,
-                &dest,
+                "--delete",
+                &format!("{}/", git_dir.to_string_lossy()),
+                &format!("{}:{}/.git/", self.host, remote_dir),
             ],
         );
     }
