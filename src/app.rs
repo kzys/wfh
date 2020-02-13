@@ -4,10 +4,11 @@ use ignore::gitignore::GitignoreBuilder;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::env;
+use std::error;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::channel;
 use std::time;
 use std::time::Duration;
@@ -93,12 +94,12 @@ impl App {
         })
     }
 
-    pub fn run(&self) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    pub fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut dirs_set = HashSet::new();
         for dir in &self.dirs {
             dirs_set.insert(dir.to_owned());
         }
-        self.sync_dirs(&dirs_set);
+        self.sync_dirs(&dirs_set)?;
 
         let (tx, rx) = channel();
         let mut watcher = watcher(tx, time::Duration::from_secs(1)).expect("error");
@@ -118,7 +119,7 @@ impl App {
                 Err(e) => {
                     if e == std::sync::mpsc::RecvTimeoutError::Timeout {
                         if !dirs_set.is_empty() {
-                            self.sync_dirs(&dirs_set);
+                            self.sync_dirs(&dirs_set)?;
                             dirs_set.clear();
                         }
                     } else {
@@ -130,13 +131,14 @@ impl App {
         Ok(())
     }
 
-    fn sync_dirs(&self, dirs: &HashSet<PathBuf>) {
+    fn sync_dirs(&self, dirs: &HashSet<PathBuf>) -> Result<(), Box<dyn error::Error>> {
         for dir in dirs {
-            self.sync_dir(dir)
+            self.sync_dir(dir)?;
         }
+        Ok(())
     }
 
-    fn sync_dir(&self, dir: &PathBuf) {
+    fn sync_dir(&self, dir: &PathBuf) -> Result<(), Box<dyn error::Error>> {
         let remote_dir = self.remote_dir(dir);
 
         let mut git_dir = dir.clone();
@@ -148,19 +150,17 @@ impl App {
                 .arg("-C")
                 .arg(dir)
                 .args(vec!["ls-files", "--exclude-standard", "-oi", "--directory"])
-                .output()
-                .expect("failed to execute process");
-            file.write_all(&output.stdout);
+                .output()?;
+            file.write_all(&output.stdout)?;
             Some(file.into_temp_path())
         } else {
             None
         };
 
-        let mkdir = Command::new("ssh")
+        Command::new("ssh")
             .arg(&self.host)
             .args(vec!["mkdir", "-p", &remote_dir])
-            .output()
-            .expect("failed to execute process");
+            .output()?;
 
         let mut rsync = Command::new("rsync");
         rsync.args(vec!["--archive", "--verbose"]);
@@ -176,14 +176,16 @@ impl App {
 
         rsync.arg(format!("{}:{}/", self.host, remote_dir));
 
-        self.spawn_and_wait(&mut rsync);
+        self.spawn_and_wait(&mut rsync)?;
 
         if git_dir.is_dir() {
-            self.sync_git_dir(dir);
+            self.sync_git_dir(dir)?;
         }
+
+        Ok(())
     }
 
-    fn sync_git_dir(&self, dir: &PathBuf) {
+    fn sync_git_dir(&self, dir: &PathBuf) -> Result<(), io::Error> {
         let mut git_dir = dir.clone();
         git_dir.push(".git/");
 
@@ -194,7 +196,9 @@ impl App {
         let remote_dir = self.remote_dir(dir);
         rsync.arg(format!("{}:{}/.git/", self.host, remote_dir));
 
-        self.spawn_and_wait(&mut rsync);
+        self.spawn_and_wait(&mut rsync).map(|_exit| {
+            () // FIXME
+        })
     }
 
     fn remote_dir(&self, path: &PathBuf) -> String {
@@ -207,14 +211,13 @@ impl App {
         s
     }
 
-    fn spawn_and_wait(&self, command: &mut Command) -> bool {
+    fn spawn_and_wait(&self, command: &mut Command) -> Result<ExitStatus, io::Error> {
         debug!("spwan {:?}", command);
 
         let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
-            .expect("failed to execute process");
+            .spawn()?;
 
         if let Some(stdout) = child.stdout.take() {
             let reader = BufReader::new(stdout);
@@ -226,10 +229,6 @@ impl App {
             reader.lines().for_each(|line| error!("err: {:?}", line));
         }
 
-        if let Ok(exit) = child.wait() {
-            exit.success()
-        } else {
-            false
-        }
+        child.wait()
     }
 }
