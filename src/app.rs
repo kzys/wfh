@@ -170,7 +170,7 @@ impl App {
             rsync.arg(path.as_os_str());
         });
 
-        let mut src = dir.clone();
+        let mut src = dir.clone().as_os_str().to_os_string();
         src.push("/");
         rsync.arg(src);
 
