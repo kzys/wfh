@@ -1,5 +1,7 @@
 # wfh
 
+![GitHub Actions](https://github.com/kzys/wfh/workflows/Rust/badge.svg)
+
 wfh continuously watches your local directories and `rsync` them against
 a remote host.
 
