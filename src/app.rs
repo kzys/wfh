@@ -15,6 +15,8 @@ use std::sync::mpsc::channel;
 use std::time;
 use std::time::Duration;
 
+static RECV_TIMEOUT: Duration = Duration::from_millis(500);
+
 pub struct App {
     host: String,
     dirs: Vec<PathBuf>,
@@ -117,7 +119,7 @@ impl App {
 
         let mut dirs_set = HashSet::new();
         loop {
-            match rx.recv_timeout(Duration::from_millis(1000)) {
+            match rx.recv_timeout(RECV_TIMEOUT) {
                 Ok(event) => {
                     self.find_dir_to_sync(&event)
                         .map(|x| dirs_set.insert(x.clone()));
