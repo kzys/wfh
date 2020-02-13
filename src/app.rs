@@ -142,8 +142,6 @@ impl App {
         let mut git_dir = dir.clone();
         git_dir.push(".git");
 
-        let mut rsync_args = vec!["--archive", "--verbose"];
-
         let exclude_file = if git_dir.is_dir() {
             let mut file = tempfile::NamedTempFile::new().unwrap();
             let output = Command::new("git")
@@ -158,36 +156,47 @@ impl App {
                 .output()
                 .expect("failed to execute process");
             file.write_all(&output.stdout);
-            Some(file)
+            Some(file.into_temp_path())
         } else {
             None
         };
 
-        self.run_command("ssh", vec![&self.host, "mkdir", "-p", &remote_dir]);
+        let mkdir = Command::new("ssh")
+            .arg(&self.host)
+            .args(vec!["mkdir", "-p", &remote_dir])
+            .output()
+            .expect("failed to execute process");
 
-        let path = exclude_file.map(|file| file.path().to_string_lossy().to_string());
-        path.as_ref().map(|p| {
-            rsync_args.push("--exclude-from");
-            rsync_args.push(p);
+        let mut rsync = Command::new("rsync");
+        rsync.args(vec!["--archive", "--verbose"]);
+
+        exclude_file.as_ref().map(|path| {
+            rsync.arg("--exclude-from");
+            rsync.arg(path.as_os_str());
         });
 
         let src = format!("{}/", dir.to_string_lossy());
         let dest = format!("{}:{}/", self.host, remote_dir);
+        rsync.args(vec![&src, &dest]);
+        self.spawn_and_wait(&mut rsync);
 
-        rsync_args.push(&src);
-        rsync_args.push(&dest);
+        if git_dir.is_dir() {
+            self.sync_git_dir(dir);
+        }
+    }
 
-        self.run_command("rsync", rsync_args);
-        self.run_command(
-            "rsync",
-            vec![
-                "--archive",
-                "--verbose",
-                "--delete",
-                &format!("{}/", git_dir.to_string_lossy()),
-                &format!("{}:{}/.git/", self.host, remote_dir),
-            ],
-        );
+    fn sync_git_dir(&self, dir: &PathBuf) {
+        let remote_dir = self.remote_dir(dir);
+        let mut git_dir = dir.clone();
+        git_dir.push(".git");
+
+        let mut rsync = Command::new("rsync");
+        rsync.args(vec!["--archive", "--verbose", "--delete"]);
+        rsync.args(vec![
+            &format!("{}/", git_dir.to_string_lossy()),
+            &format!("{}:{}/.git/", self.host, remote_dir),
+        ]);
+        self.spawn_and_wait(&mut rsync);
     }
 
     fn remote_dir(&self, path: &PathBuf) -> String {
@@ -200,11 +209,10 @@ impl App {
         s
     }
 
-    fn run_command(&self, command: &str, args: Vec<&str>) -> bool {
-        info!("{} {:?}", command, args.clone());
+    fn spawn_and_wait(&self, command: &mut Command) -> bool {
+        debug!("spwan {:?}", command);
 
-        let mut child = Command::new(command)
-            .args(args)
+        let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -217,7 +225,7 @@ impl App {
 
         if let Some(stderr) = child.stderr.take() {
             let reader = BufReader::new(stderr);
-            reader.lines().for_each(|line| trace!("err: {:?}", line));
+            reader.lines().for_each(|line| error!("err: {:?}", line));
         }
 
         if let Ok(exit) = child.wait() {
