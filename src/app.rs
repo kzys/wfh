@@ -145,14 +145,9 @@ impl App {
         let exclude_file = if git_dir.is_dir() {
             let mut file = tempfile::NamedTempFile::new().unwrap();
             let output = Command::new("git")
-                .args(vec![
-                    "-C",
-                    &dir.to_string_lossy(),
-                    "ls-files",
-                    "--exclude-standard",
-                    "-oi",
-                    "--directory",
-                ])
+                .arg("-C")
+                .arg(dir)
+                .args(vec!["ls-files", "--exclude-standard", "-oi", "--directory"])
                 .output()
                 .expect("failed to execute process");
             file.write_all(&output.stdout);
@@ -175,9 +170,12 @@ impl App {
             rsync.arg(path.as_os_str());
         });
 
-        let src = format!("{}/", dir.to_string_lossy());
-        let dest = format!("{}:{}/", self.host, remote_dir);
-        rsync.args(vec![&src, &dest]);
+        let mut src = dir.clone();
+        src.push("/");
+        rsync.arg(src);
+
+        rsync.arg(format!("{}:{}/", self.host, remote_dir));
+
         self.spawn_and_wait(&mut rsync);
 
         if git_dir.is_dir() {
@@ -186,21 +184,21 @@ impl App {
     }
 
     fn sync_git_dir(&self, dir: &PathBuf) {
-        let remote_dir = self.remote_dir(dir);
         let mut git_dir = dir.clone();
-        git_dir.push(".git");
+        git_dir.push(".git/");
 
         let mut rsync = Command::new("rsync");
         rsync.args(vec!["--archive", "--verbose", "--delete"]);
-        rsync.args(vec![
-            &format!("{}/", git_dir.to_string_lossy()),
-            &format!("{}:{}/.git/", self.host, remote_dir),
-        ]);
+        rsync.arg(git_dir.as_os_str());
+
+        let remote_dir = self.remote_dir(dir);
+        rsync.arg(format!("{}:{}/.git/", self.host, remote_dir));
+
         self.spawn_and_wait(&mut rsync);
     }
 
     fn remote_dir(&self, path: &PathBuf) -> String {
-        let mut s = path.to_string_lossy().into_owned();
+        let mut s = path.to_string_lossy().to_string();
         if let Some(begin) = s.find(&self.local_home) {
             if begin == 0 {
                 s.replace_range(..self.local_home.len(), &self.remote_home)
