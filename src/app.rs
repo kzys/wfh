@@ -9,6 +9,8 @@ use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::string::FromUtf8Error;
+use std::sync::mpsc;
 use std::sync::mpsc::channel;
 use std::time;
 use std::time::Duration;
@@ -30,30 +32,34 @@ fn find_path(event: &DebouncedEvent) -> Option<&Path> {
     }
 }
 
-fn capture_stdin(command: &str, args: Vec<&str>) -> Result<String, std::string::FromUtf8Error> {
-    info!("{} {:?}", command, args.clone());
+fn remote_getenv(host: &str, key: &str) -> Result<String, FromUtf8Error> {
+    let mut arg = String::from("$");
+    arg.push_str(key);
 
-    let out = Command::new(command)
-        .args(args)
+    let out = Command::new("ssh")
+        .arg(host)
+        .args(vec!["echo", "-n"])
+        .arg(arg)
         .output()
-        .expect("failed to execute process");
+        .unwrap(); // FIXME
 
     String::from_utf8(out.stdout)
 }
 
 impl App {
-    pub fn new(host: String, dirs: Vec<String>) -> Result<App, Box<dyn std::error::Error>> {
-        let mut dirs_to_sync: Vec<std::path::PathBuf> = vec![];
-
+    pub fn new(host: String, dirs: Vec<String>) -> Result<App, Box<dyn error::Error>> {
+        let mut dirs_to_sync: Vec<PathBuf> = vec![];
         for parent in dirs {
             for dir in fs::read_dir(&parent)? {
-                dirs_to_sync.push(dir?.path())
+                let dir = dir?;
+                if dir.file_type()?.is_dir() {
+                    dirs_to_sync.push(dir.path())
+                }
             }
         }
 
-        let remote_home = capture_stdin("ssh", vec![&host, "echo", "-n", "$HOME"])?;
+        let remote_home = remote_getenv(&host, "HOME")?;
         let local_home = env::var("HOME")?;
-
         Ok(App {
             host,
             dirs: dirs_to_sync,
@@ -94,7 +100,7 @@ impl App {
         })
     }
 
-    pub fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn run(&self) -> Result<(), Box<dyn error::Error>> {
         let mut dirs_set = HashSet::new();
         for dir in &self.dirs {
             dirs_set.insert(dir.to_owned());
@@ -117,7 +123,7 @@ impl App {
                         .map(|x| dirs_set.insert(x.clone()));
                 }
                 Err(e) => {
-                    if e == std::sync::mpsc::RecvTimeoutError::Timeout {
+                    if e == mpsc::RecvTimeoutError::Timeout {
                         if !dirs_set.is_empty() {
                             self.sync_dirs(&dirs_set)?;
                             dirs_set.clear();
