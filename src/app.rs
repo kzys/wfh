@@ -168,20 +168,11 @@ impl App {
             .args(vec!["mkdir", "-p", &remote_dir])
             .output()?;
 
-        let mut rsync = Command::new("rsync");
-        rsync.args(vec!["--archive", "--verbose"]);
-
+        let mut rsync = self.build_sync_dir_command(dir);
         exclude_file.as_ref().map(|path| {
             rsync.arg("--exclude-from");
             rsync.arg(path.as_os_str());
         });
-
-        let mut src = dir.clone().as_os_str().to_os_string();
-        src.push("/");
-        rsync.arg(src);
-
-        rsync.arg(format!("{}:{}/", self.host, remote_dir));
-
         self.spawn_and_wait(&mut rsync)?;
 
         if git_dir.is_dir() {
@@ -189,6 +180,20 @@ impl App {
         }
 
         Ok(())
+    }
+
+    fn build_sync_dir_command(&self, dir: &PathBuf) -> Command {
+        let mut rsync = Command::new("rsync");
+        rsync.args(vec!["--archive", "--verbose"]);
+
+        let mut src = dir.clone().as_os_str().to_os_string();
+        src.push("/");
+        rsync.arg(src);
+
+        let remote_dir = self.remote_dir(dir);
+        rsync.arg(format!("{}:{}/", self.host, remote_dir));
+
+        rsync
     }
 
     fn sync_git_dir(&self, dir: &PathBuf) -> Result<(), io::Error> {
@@ -236,5 +241,27 @@ impl App {
         }
 
         child.wait()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_sync_dir_command() {
+        let app = App {
+            dirs: vec![],
+            host: "user@moon".to_string(),
+            local_home: "/home/alice".to_string(),
+            remote_home: "/home/alice-on-moon".to_string(),
+        };
+
+        let dir = PathBuf::from("/home/alice/path/to/dir");
+        let cmd = app.build_sync_dir_command(&dir);
+        assert_eq!(
+            format!("{:?}", cmd),
+            r#""rsync" "--archive" "--verbose" "/home/alice/path/to/dir/" "user@moon:/home/alice-on-moon/path/to/dir/""#
+        );
     }
 }
