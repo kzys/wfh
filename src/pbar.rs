@@ -1,6 +1,8 @@
 extern crate libc;
 
-use std::path;
+use std::fmt::Display;
+
+const CSI: &str = "\x1b[2";
 
 pub fn window_size() -> (u16, u16) {
     let size = libc::winsize {
@@ -18,12 +20,12 @@ pub fn window_size() -> (u16, u16) {
 
 pub fn reset_pbar(n: usize) {
     for _ in 0..n {
-        println!("\x1b[2F");
+        println!("{}F", CSI);
     }
 }
 
-pub fn print_pbar(dirs: &Vec<path::PathBuf>, s: &str) {
-    for dir in dirs {
-        println!("\x1b[2K[{}] {:?}", s, dir);
+pub fn print_pbar<I, X>(xs: I) where I: IntoIterator<Item = X>, X: Display {
+    for x in xs {
+        println!("{}K{}", CSI, x);
     }
 }

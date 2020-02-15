@@ -12,7 +12,6 @@ mod pbar;
 
 use structopt::StructOpt;
 
-/// A basic example
 #[derive(StructOpt, Debug)]
 #[structopt(name = "wfh", about = "synchronize files as you edit")]
 struct Options {

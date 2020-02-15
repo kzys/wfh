@@ -15,6 +15,8 @@ use std::sync::mpsc::channel;
 use std::time;
 use std::time::Duration;
 
+use super::pbar;
+
 static RECV_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub struct App {
@@ -119,6 +121,16 @@ impl App {
 
         let mut dirs_set = HashSet::new();
         loop {
+            let mut lines = vec![];
+            for dir in &self.dirs {
+                let status = match dirs_set.get(dir) {
+                    Some(_) => "sync",
+                    None    => "    ",
+                };
+                lines.push(format!("{}: {}", status, dir.to_string_lossy()))
+            }
+            pbar::print_pbar(&lines);
+
             match rx.recv_timeout(RECV_TIMEOUT) {
                 Ok(event) => {
                     self.find_dir_to_sync(&event)
@@ -135,6 +147,8 @@ impl App {
                     }
                 }
             }
+
+            pbar::reset_pbar(lines.len());
         }
         Ok(())
     }
