@@ -125,7 +125,7 @@ impl App {
             for dir in &self.dirs {
                 let status = match dirs_set.get(dir) {
                     Some(_) => "sync",
-                    None    => "    ",
+                    None => "    ",
                 };
                 lines.push(format!("{}: {}", status, dir.to_string_lossy()))
             }

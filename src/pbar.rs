@@ -24,7 +24,11 @@ pub fn reset_pbar(n: usize) {
     }
 }
 
-pub fn print_pbar<I, X>(xs: I) where I: IntoIterator<Item = X>, X: Display {
+pub fn print_pbar<I, X>(xs: I)
+where
+    I: IntoIterator<Item = X>,
+    X: Display,
+{
     for x in xs {
         println!("{}K{}", CSI, x);
     }
