@@ -25,9 +25,6 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let options = Options::from_args();
     debug!("{:#?}", options);
 
-    let (_, col) = pbar::window_size();
-    debug!("col = {}", col);
-
     let app = app::App::new(options.host, options.dirs)?;
     app.run()
 }
