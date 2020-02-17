@@ -8,7 +8,7 @@ extern crate log;
 extern crate structopt;
 
 mod app;
-mod pbar;
+mod term;
 
 use structopt::StructOpt;
 
