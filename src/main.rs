@@ -4,7 +4,6 @@ extern crate notify;
 #[macro_use]
 extern crate log;
 
-#[macro_use]
 extern crate structopt;
 
 mod app;

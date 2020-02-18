@@ -16,6 +16,10 @@ use std::sync::mpsc::channel;
 use std::time;
 use std::time::Duration;
 
+extern crate ctrlc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use super::term;
 
 static RECV_TIMEOUT: Duration = Duration::from_millis(500);
@@ -123,8 +127,14 @@ impl App {
             watcher.watch(parent, RecursiveMode::Recursive)?;
         }
 
+        let running = Arc::new(AtomicBool::new(true));
+        let r = running.clone();
+        ctrlc::set_handler(move || {
+            r.store(false, Ordering::SeqCst);
+        }).expect("Error setting Ctrl-C handler");
+
         let mut dirs_set = HashSet::new();
-        loop {
+        while running.load(Ordering::SeqCst) {
             if log::max_level() == log::LevelFilter::Error {
                 self.print_dirs(&dirs_set);
             }
