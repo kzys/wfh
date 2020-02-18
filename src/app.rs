@@ -1,6 +1,7 @@
 extern crate tempfile;
 
 use ignore::gitignore::GitignoreBuilder;
+use log;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::env;
@@ -109,6 +110,9 @@ impl App {
         for dir in &self.dirs {
             dirs_set.insert(dir.to_owned());
         }
+        if log::max_level() == log::LevelFilter::Error {
+            self.print_dirs(&dirs_set);
+        }
         self.sync_dirs(&dirs_set)?;
 
         let (tx, rx) = channel();
@@ -121,7 +125,9 @@ impl App {
 
         let mut dirs_set = HashSet::new();
         loop {
-            self.print_dirs(&dirs_set);
+            if log::max_level() == log::LevelFilter::Error {
+                self.print_dirs(&dirs_set);
+            }
 
             match rx.recv_timeout(RECV_TIMEOUT) {
                 Ok(event) => {
