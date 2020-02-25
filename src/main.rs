@@ -1,10 +1,9 @@
 extern crate ignore;
 extern crate notify;
+extern crate structopt;
 
 #[macro_use]
 extern crate log;
-
-extern crate structopt;
 
 mod app;
 mod term;

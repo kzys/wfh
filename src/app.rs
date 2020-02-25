@@ -1,28 +1,38 @@
+extern crate ctrlc;
 extern crate tempfile;
 
+use super::term;
 use ignore::gitignore::GitignoreBuilder;
 use log;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::env;
 use std::error;
+use std::fmt;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::string::FromUtf8Error;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::mpsc::channel;
+use std::sync::Arc;
 use std::time;
 use std::time::Duration;
 
-extern crate ctrlc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-
-use super::term;
-
 static RECV_TIMEOUT: Duration = Duration::from_millis(500);
+
+#[derive(Debug)]
+struct RsyncError {}
+
+impl fmt::Display for RsyncError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RsyncError")
+    }
+}
+
+impl error::Error for RsyncError {}
 
 pub struct App {
     host: String,
@@ -131,7 +141,8 @@ impl App {
         let r = running.clone();
         ctrlc::set_handler(move || {
             r.store(false, Ordering::SeqCst);
-        }).expect("Error setting Ctrl-C handler");
+        })
+        .expect("Error setting Ctrl-C handler");
 
         let mut dirs_set = HashSet::new();
         while running.load(Ordering::SeqCst) {
@@ -184,7 +195,7 @@ impl App {
         git_dir.push(".git");
 
         let exclude_file = if git_dir.is_dir() {
-            let mut file = tempfile::NamedTempFile::new().unwrap();
+            let mut file = tempfile::NamedTempFile::new()?;
             let output = Command::new("git")
                 .arg("-C")
                 .arg(dir)
@@ -229,7 +240,7 @@ impl App {
         rsync
     }
 
-    fn sync_git_dir(&self, dir: &PathBuf) -> Result<(), io::Error> {
+    fn sync_git_dir(&self, dir: &PathBuf) -> Result<(), Box<dyn error::Error>> {
         let mut git_dir = dir.clone();
         git_dir.push(".git/");
 
@@ -240,9 +251,15 @@ impl App {
         let remote_dir = self.remote_dir(dir);
         rsync.arg(format!("{}:{}/.git/", self.host, remote_dir));
 
-        self.spawn_and_wait(&mut rsync).map(|_exit| {
-            () // FIXME
-        })
+        self.spawn_and_wait(&mut rsync)
+            .map_err(|err| Box::new(err) as Box<dyn error::Error>)
+            .and_then(|exit| {
+                if !exit.success() {
+                    Err(Box::new(RsyncError {}))
+                } else {
+                    Ok(())
+                }
+            })
     }
 
     fn remote_dir(&self, path: &PathBuf) -> String {
