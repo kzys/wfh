@@ -52,11 +52,15 @@ fn find_path(event: &DebouncedEvent) -> Option<&Path> {
     }
 }
 
-fn remote_getenv(host: &str, key: &str) -> Result<String, Box<dyn error::Error>> {
+fn remote_getenv(
+    ssh_command: &str,
+    host: &str,
+    key: &str,
+) -> Result<String, Box<dyn error::Error>> {
     let mut arg = String::from("$");
     arg.push_str(key);
 
-    let out = Command::new("ssh")
+    let out = Command::new(ssh_command)
         .arg(host)
         .args(vec!["echo", "-n"])
         .arg(arg)
@@ -78,7 +82,7 @@ impl App {
             }
         }
 
-        let remote_home = remote_getenv(&host, "HOME")?;
+        let remote_home = remote_getenv("ssh", &host, "HOME")?;
         let local_home = env::var("HOME")?;
         Ok(App {
             host,
@@ -307,8 +311,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_remote_getenv() {
+        let home = remote_getenv("echo", "example.com", "HOME").unwrap();
+        assert_eq!("example.com echo -n $HOME\n", home,);
+    }
+
+    #[test]
     fn build_sync_dir_command() {
         let app = App {
+            root_dirs: vec![],
             dirs: vec![],
             host: "user@moon".to_string(),
             local_home: "/home/alice".to_string(),
