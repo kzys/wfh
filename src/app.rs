@@ -36,6 +36,7 @@ impl error::Error for RsyncError {}
 
 pub struct App {
     host: String,
+    root_dirs: Vec<PathBuf>,
     dirs: Vec<PathBuf>,
     remote_home: String,
     local_home: String,
@@ -61,14 +62,14 @@ fn remote_getenv(host: &str, key: &str) -> Result<String, Box<dyn error::Error>>
         .arg(arg)
         .output()?;
 
-    String::from_utf8(out.stdout)
-        .map_err(|err| Box::new(err) as Box<dyn error::Error>)
+    String::from_utf8(out.stdout).map_err(|err| Box::new(err) as Box<dyn error::Error>)
 }
 
 impl App {
     pub fn new(host: String, dirs: Vec<String>) -> Result<App, Box<dyn error::Error>> {
         let mut dirs_to_sync: Vec<PathBuf> = vec![];
-        for parent in dirs {
+        let root_dirs: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+        for parent in root_dirs.clone() {
             for dir in fs::read_dir(&parent)? {
                 let dir = dir?;
                 if dir.file_type()?.is_dir() {
@@ -81,6 +82,7 @@ impl App {
         let local_home = env::var("HOME")?;
         Ok(App {
             host,
+            root_dirs: root_dirs,
             dirs: dirs_to_sync,
             remote_home,
             local_home,
@@ -125,7 +127,7 @@ impl App {
         let (tx, rx) = channel();
         let mut watcher = watcher(tx, time::Duration::from_secs(1)).expect("error");
 
-        for parent in &self.dirs {
+        for parent in &self.root_dirs {
             debug!("watch {:?}", parent);
             watcher.watch(parent, RecursiveMode::Recursive)?;
         }
