@@ -120,14 +120,7 @@ impl App {
     }
 
     pub fn run(&self) -> Result<(), Box<dyn error::Error>> {
-        let mut dirs_set = HashSet::new();
-        for dir in &self.dirs {
-            dirs_set.insert(dir.to_owned());
-        }
-        if log::max_level() == log::LevelFilter::Error {
-            self.print_dirs(&dirs_set);
-        }
-        self.sync_dirs(&dirs_set)?;
+        self.initial_sync_dirs()?;
 
         let (tx, rx) = channel();
         let mut watcher = watcher(tx, time::Duration::from_secs(1)).expect("error");
@@ -167,6 +160,19 @@ impl App {
                 }
             }
         }
+        Ok(())
+    }
+
+    fn initial_sync_dirs(&self) -> Result<(), Box<dyn error::Error>> {
+        for dir in &self.dirs {
+            let mut dirs_set = HashSet::new();
+            dirs_set.insert(dir.to_owned());
+            if log::max_level() == log::LevelFilter::Error {
+                self.print_dirs(&dirs_set);
+            }
+            self.sync_dirs(&dirs_set)?;
+        }
+
         Ok(())
     }
 
