@@ -51,7 +51,7 @@ fn find_path(event: &DebouncedEvent) -> Option<&Path> {
     }
 }
 
-fn remote_getenv(host: &str, key: &str) -> Result<String, FromUtf8Error> {
+fn remote_getenv(host: &str, key: &str) -> Result<String, Box<dyn error::Error>> {
     let mut arg = String::from("$");
     arg.push_str(key);
 
@@ -59,10 +59,10 @@ fn remote_getenv(host: &str, key: &str) -> Result<String, FromUtf8Error> {
         .arg(host)
         .args(vec!["echo", "-n"])
         .arg(arg)
-        .output()
-        .unwrap(); // FIXME
+        .output()?;
 
     String::from_utf8(out.stdout)
+        .map_err(|err| Box::new(err) as Box<dyn error::Error>)
 }
 
 impl App {
