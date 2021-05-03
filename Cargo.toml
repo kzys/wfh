@@ -10,7 +10,7 @@ description = "rsync as you edit"
 
 [dependencies]
 nix = "0.20.0"
-libc = "0.2.91"
+libc = "0.2.94"
 notify = "4.0.15"
 structopt = "0.3.21"
 ignore = "0.4"
